@@ -29,6 +29,8 @@ function syncLine(sync) {
       return `<span class="acct-dot acct-dot--ok" aria-hidden="true"></span><span>Synced${sync.lastSyncedAt ? ` · ${ago(sync.lastSyncedAt)}` : ''}</span>`;
     case 'offline':
       return `<span class="acct-dot acct-dot--warn" aria-hidden="true"></span><span>Offline. Changes will sync when you reconnect.</span>`;
+    case 'waiting':
+      return `<span class="acct-dot acct-dot--warn" aria-hidden="true"></span><span>Can’t reach the sync server. Your changes are saved here and will upload when it connects. A network filter or browser extension may be blocking firestore.googleapis.com.</span>`;
     case 'error':
       return `<span class="acct-dot acct-dot--err" aria-hidden="true"></span><span>${esc(sync.error || 'Sync problem.')}</span>`;
     default:

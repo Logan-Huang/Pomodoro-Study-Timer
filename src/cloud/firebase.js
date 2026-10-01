@@ -1,6 +1,9 @@
 // Lazy Firebase loader: fetches the modular SDK (app, auth, firestore) from the CDN on first use and
-// initialises it once. Firestore keeps an offline cache in IndexedDB, so the app works offline and
-// queued writes sync when the connection returns.
+// initialises it once.
+//
+// Firestore's cache is in memory only. Aura's own local storage already keeps this device's copy
+// (and is cleared on sign-out), so nothing extra is left behind in the browser, and each tab talks
+// to the server on its own instead of coordinating through IndexedDB (which can stall).
 import { FIREBASE_CONFIG, SDK_BASE } from './config.js';
 
 let loading = null;
@@ -17,17 +20,8 @@ export function loadFirebase() {
       ]);
       const app = appMod.initializeApp(FIREBASE_CONFIG);
       const auth = A.getAuth(app);
-      let db;
-      try {
-        db = F.initializeFirestore(app, {
-          ignoreUndefinedProperties: true,
-          localCache: F.persistentLocalCache({ tabManager: F.persistentMultipleTabManager() }),
-        });
-      } catch (err) {
-        // Private windows or blocked IndexedDB: fall back to an in-memory cache.
-        console.warn('[aura] Firestore offline cache unavailable', err);
-        db = F.initializeFirestore(app, { ignoreUndefinedProperties: true });
-      }
+      const db = F.initializeFirestore(app, { ignoreUndefinedProperties: true, localCache: F.memoryLocalCache() });
+      removeOldCache();
       ready = { app, auth, db, A, F };
       return ready;
     })().catch((err) => {
@@ -36,6 +30,19 @@ export function loadFirebase() {
     });
   }
   return loading;
+}
+
+// Earlier versions kept Firestore's cache in IndexedDB ("firestore/…" databases); remove it. If an
+// old tab still has it open, the browser finishes deleting once that tab closes.
+function removeOldCache() {
+  try {
+    indexedDB
+      .databases?.()
+      .then((list) => list.forEach((d) => d.name?.startsWith('firestore/') && indexedDB.deleteDatabase(d.name)))
+      .catch(() => {});
+  } catch {
+    /* IndexedDB unavailable */
+  }
 }
 
 /**

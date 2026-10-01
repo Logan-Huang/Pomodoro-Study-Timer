@@ -24,7 +24,10 @@ const state = { status: 'off', lastSyncedAt: 0, error: null };
 let ctx = null; // { db, F, uid }
 let applying = 0;
 let pending = 0;
+let generation = 0; // bumped by stopSync, so writes from an earlier session don't skew `pending`
+let slowTimer = 0;
 let settingsTimer = 0;
+const SLOW_MS = 15000; // no answer from the server for this long → say so instead of "Syncing…"
 const unsubs = [];
 const last = { tasks: new Map(), activeId: null, activeAt: 0, settingsAt: 0, settingsJson: '', timerSig: '' };
 
@@ -54,20 +57,35 @@ function idleStatus() {
   setStatus(navigator.onLine ? 'synced' : 'offline');
 }
 
+// While the server hasn't answered for a while, show that instead of an endless "Syncing…".
+function watchSlow() {
+  clearTimeout(slowTimer);
+  slowTimer = setTimeout(() => {
+    if (ctx && pending > 0 && state.status === 'syncing') {
+      console.warn('[aura] the sync server hasn’t answered for 15 s (blocked by a network filter or extension?)');
+      setStatus('waiting');
+    }
+  }, SLOW_MS);
+}
+
 // Every write goes through here: shows "Syncing…" until the server confirms.
 function track(promise) {
+  const gen = generation;
   pending++;
-  if (state.status !== 'error') setStatus(navigator.onLine ? 'syncing' : 'offline');
+  if (state.status !== 'error' && state.status !== 'waiting') setStatus(navigator.onLine ? 'syncing' : 'offline');
+  if (pending === 1) watchSlow();
   promise
     .then(() => {
       state.lastSyncedAt = Date.now();
     })
     .catch((err) => {
       console.warn('[aura] sync write failed', err);
-      if (ctx) setStatus('error', describe(err));
+      if (ctx && gen === generation) setStatus('error', describe(err));
     })
     .finally(() => {
+      if (gen !== generation) return;
       pending--;
+      if (pending === 0) clearTimeout(slowTimer);
       if (pending === 0 && ctx && state.status !== 'error') idleStatus();
     });
   return promise;
@@ -149,12 +167,19 @@ function rememberTasks() {
 export async function startSync({ db, F, uid }) {
   stopSync();
   ctx = { db, F, uid };
+  const gen = generation;
   setStatus('syncing');
   const R = refs();
   let user;
   let taskDocs;
   let sessionDocs;
   let timerDoc;
+  const slow = setTimeout(() => {
+    if (ctx && gen === generation && state.status === 'syncing') {
+      console.warn('[aura] still waiting for the sync server after 15 s');
+      setStatus('waiting');
+    }
+  }, SLOW_MS);
   try {
     const [u, t, s, tm] = await Promise.all([F.getDoc(R.user), F.getDocs(R.tasks), F.getDocs(R.sessions), F.getDoc(R.timer)]);
     user = u.exists() ? u.data() : null;
@@ -162,11 +187,25 @@ export async function startSync({ db, F, uid }) {
     sessionDocs = s.docs.map((d) => d.data());
     timerDoc = tm.exists() ? tm.data() : null;
   } catch (err) {
-    if (ctx?.uid === uid) setStatus('error', describe(err));
+    console.warn('[aura] could not load account data', err);
+    if (ctx?.uid === uid && gen === generation) setStatus('error', describe(err));
+    throw err;
+  } finally {
+    clearTimeout(slow);
+  }
+  if (ctx?.uid !== uid || gen !== generation) return; // signed out (or restarted) while loading
+
+  try {
+    await mergeAndAttach({ F, R, gen, user, taskDocs, sessionDocs, timerDoc });
+  } catch (err) {
+    // Anything unexpected here must show up in the card, not leave it on "Syncing…".
+    console.error('[aura] sync could not start', err);
+    if (gen === generation) setStatus('error', describe(err));
     throw err;
   }
-  if (ctx?.uid !== uid) return; // signed out while loading
+}
 
+async function mergeAndAttach({ F, R, gen, user, taskDocs, sessionDocs, timerDoc }) {
   const B = batcher();
   const now = Date.now();
   const userPatch = {};
@@ -231,7 +270,7 @@ export async function startSync({ db, F, uid }) {
   } catch {
     /* status already shows the error; listeners keep running */
   }
-  if (ctx?.uid === uid && state.status !== 'error') idleStatus();
+  if (ctx && gen === generation && pending === 0 && state.status !== 'error') idleStatus();
 }
 
 export function stopSync() {
@@ -243,6 +282,8 @@ export function stopSync() {
     }
   }
   clearTimeout(settingsTimer);
+  clearTimeout(slowTimer);
+  generation++;
   ctx = null;
   pending = 0;
   last.tasks = new Map();
