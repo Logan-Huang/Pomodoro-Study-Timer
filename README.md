@@ -4,6 +4,8 @@ Aura is a calm, beautiful study timer. It has three modes, a living aurora backg
 
 It is plain JavaScript (ES modules) with no build step and no npm dependencies.
 
+**Live:** https://logan-huang.github.io/Pomodoro-Study-Timer/ (GitHub Pages, deployed from `main`).
+
 ## Features
 
 **Pomodoro**
@@ -57,6 +59,10 @@ Then open http://localhost:5173.
 
 Aura must be served over http. ES modules and Google sign-in do not work from a `file://` URL.
 
+### GitHub Pages
+
+The repo deploys as-is: Pages serves `main` from the repository root, and `.nojekyll` turns off Jekyll processing. Every push to `main` updates the live site within a minute or two. Settings, tasks and stats live in each browser's `localStorage`, so the live site and `localhost` keep separate data.
+
 ## Google Calendar setup
 
 Aura talks to Google directly from your browser using Google Identity Services. You create your own OAuth client, which takes about five minutes.
@@ -70,7 +76,7 @@ Aura talks to Google directly from your browser using Google Identity Services. 
    - Under **Test users**, add your own Google account.
 4. Go to **APIs & Services > Credentials > Create credentials > OAuth client ID**.
    - Application type: **Web application**.
-   - **Authorized JavaScript origins**: `http://localhost:5173`
+   - **Authorized JavaScript origins**: `http://localhost:5173` for local use, plus `https://logan-huang.github.io` for the live site. Origins have no path, so don't add `/Pomodoro-Study-Timer`.
    - No redirect URI is needed.
 5. Copy the **Client ID**.
 6. Paste it into the Client ID field in Aura's **Schedule** tab, or set `GOOGLE_CLIENT_ID` in `src/calendar/config.js`.
