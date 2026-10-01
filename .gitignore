@@ -1,0 +1,15 @@
+# Dependencies & builds (the app has none, but keep the repo clean if tooling is added)
+node_modules/
+dist/
+
+# Logs & env
+*.log
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

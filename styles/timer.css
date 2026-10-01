@@ -1,0 +1,571 @@
+/* Aura timer view (.tv-*), scoped under .timer-root */
+
+.timer-root {
+  --tv-ring: clamp(260px, min(78vw, 56vh), 460px);
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+.timer-root [hidden] { display: none !important; }
+
+.timer-root .tv {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(16px, 3.2vh, 32px);
+  width: 100%;
+  max-width: 640px;
+}
+
+/* ---------- top row ---------- */
+
+.timer-root .tv-top {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 40px;
+  max-width: 100%;
+}
+.timer-root .tv-phases {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+.timer-root .tv-phase-chip {
+  transition: background var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-3) var(--ease-out), transform var(--dur-2) var(--ease-spring);
+}
+.timer-root .tv-phase-chip.is-active {
+  box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 40%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.timer-root .tv-phase-chip:active { transform: scale(.96); }
+
+.timer-root .tv-plan {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: 5px 5px 5px 14px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06);
+  backdrop-filter: blur(var(--blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(140%);
+  animation: tv-fade-up var(--dur-3) var(--ease-out) both;
+}
+.timer-root .tv-plan__icon { color: var(--accent); display: inline-flex; }
+.timer-root .tv-plan__text { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.timer-root .tv-plan__title {
+  font: italic 400 18px/1.2 var(--font-serif);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 34ch;
+}
+.timer-root .tv-plan__until {
+  font: 500 12px/1 var(--font-ui);
+  letter-spacing: .04em;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.timer-root .tv-schedule-hint {
+  margin: 0;
+  font: italic 400 17px/1.4 var(--font-serif);
+  color: var(--text-dim);
+  text-align: center;
+  text-wrap: balance;
+  animation: tv-fade-up var(--dur-3) var(--ease-out) both;
+}
+
+/* ---------- ring ---------- */
+
+.timer-root .tv-ring {
+  position: relative;
+  width: var(--tv-ring);
+  aspect-ratio: 1;
+  container-type: inline-size;
+  flex: none;
+}
+.timer-root .tv-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.timer-root .tv-aura {
+  position: absolute;
+  inset: -14%;
+  pointer-events: none;
+  animation: tv-breathe 4.5s ease-in-out infinite;
+}
+.timer-root .tv-aura__spin {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, var(--accent), var(--accent-2), var(--accent-3), var(--accent));
+  filter: blur(34px);
+  -webkit-mask: radial-gradient(closest-side, transparent 42%, #000 64%, transparent 100%);
+  mask: radial-gradient(closest-side, transparent 42%, #000 64%, transparent 100%);
+  opacity: .34;
+  transition: opacity var(--dur-4) var(--ease-out);
+  animation: tv-spin 60s linear infinite;
+}
+.timer-root[data-tv-status="running"] .tv-aura__spin { opacity: .78; }
+.timer-root[data-tv-status="done"] .tv-aura__spin { opacity: .5; }
+
+.timer-root .tv-pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 60%, transparent),
+    inset 0 0 40px color-mix(in srgb, var(--accent) 35%, transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.timer-root .tv-track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text) 7%, transparent);
+  stroke-width: 8;
+}
+.timer-root .tv-arc {
+  fill: none;
+  stroke: url(#tv-grad);
+  stroke-width: 8;
+  stroke-linecap: round;
+  transition: opacity var(--dur-3) var(--ease-out);
+}
+.timer-root .tv-arc--glow { stroke-width: 15; opacity: .55; }
+.timer-root .tv-arcs.is-empty .tv-arc { opacity: 0; }
+.timer-root[data-tv-status="running"] .tv-arc--glow { opacity: .8; }
+
+.timer-root .tv-tick {
+  stroke: color-mix(in srgb, var(--text) 14%, transparent);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  transition: stroke var(--dur-3) var(--ease-out);
+}
+.timer-root .tv-tick--major {
+  stroke-width: 2.2;
+  stroke: color-mix(in srgb, var(--text) 26%, transparent);
+}
+.timer-root .tv-tick.is-on { stroke: color-mix(in srgb, var(--accent) 70%, transparent); }
+.timer-root .tv-tick--major.is-on { stroke: var(--accent); }
+
+.timer-root .tv-orb { transition: opacity var(--dur-3) var(--ease-out); }
+.timer-root .tv-orb__halo {
+  fill: color-mix(in srgb, var(--accent) 40%, transparent);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: tv-halo 2.4s ease-in-out infinite;
+}
+.timer-root .tv-orb__glow { fill: var(--accent-2); opacity: .9; }
+.timer-root .tv-orb__core { fill: #fff; }
+.timer-root[data-tv-status="idle"] .tv-orb__halo,
+.timer-root[data-tv-status="paused"] .tv-orb__halo { animation-duration: 4.5s; opacity: .7; }
+.timer-root[data-tv-status="done"] .tv-orb { opacity: 0; }
+
+/* ---------- center ---------- */
+
+.timer-root .tv-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  text-align: center;
+  row-gap: clamp(2px, 1.4cqw, 8px);
+  pointer-events: none;
+}
+.timer-root .tv-center > * { pointer-events: auto; }
+
+.timer-root .tv-phase {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: italic 400 clamp(18px, 6cqw, 26px)/1.1 var(--font-serif);
+  color: var(--text-dim);
+}
+.timer-root .tv-phase__icon { display: inline-flex; color: var(--accent); transition: color var(--dur-4) var(--ease-out); }
+.timer-root .tv-phase__icon .icon { width: 1em; height: 1em; }
+
+.timer-root .tv-timewrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  font-size: clamp(56px, 11vw, 124px);
+  font-size: min(25cqw, 124px);
+  transition: font-size var(--dur-3) var(--ease-out);
+}
+.timer-root .tv-timewrap.is-long { font-size: clamp(38px, 8vw, 80px); font-size: min(16.5cqw, 80px); }
+.timer-root .tv-time,
+.timer-root .tv-edit { grid-area: 1 / 1; }
+
+.timer-root .tv-time {
+  position: relative;
+  appearance: none;
+  background: none;
+  border: 0;
+  margin: 0;
+  padding: 0 .06em;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: 1em;
+  font-weight: 200;
+  line-height: 1.02;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  justify-content: center;
+  cursor: text;
+  -webkit-tap-highlight-color: transparent;
+}
+.timer-root .tv-time:disabled { cursor: default; opacity: 1; }
+.timer-root .tv-time:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 6px; }
+.timer-root .tv-timewrap.is-editing .tv-time { visibility: hidden; }
+
+.timer-root .tv-digit {
+  position: relative;
+  display: inline-block;
+  width: .6em;
+  text-align: center;
+}
+.timer-root .tv-digit--sep { width: .3em; }
+.timer-root .tv-char {
+  display: inline-block;
+  padding: 0 .02em;
+  background: linear-gradient(180deg, var(--text) 8%, color-mix(in srgb, var(--accent) 55%, white) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  will-change: transform;
+}
+.timer-root .tv-char.is-in { animation: tv-digit-in 520ms var(--ease-out) both; }
+.timer-root .tv-char.is-out {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  animation: tv-digit-out 380ms var(--ease-out) both;
+  pointer-events: none;
+}
+.timer-root[data-tv-status="paused"] .tv-time { animation: tv-blink 2.4s ease-in-out infinite; }
+
+/* In-place editor: same size and face as the digits, with a glowing underline instead of a box. */
+.timer-root .tv-edit.input,
+.timer-root .tv-edit.input:hover,
+.timer-root .tv-edit.input:focus {
+  width: 3.3em;
+  max-width: 84cqw;
+  height: auto;
+  margin: 0;
+  padding: 0 .04em .06em;
+  border: 0;
+  border-radius: 0;
+  font-family: var(--font-display);
+  font-size: .9em;
+  font-weight: 200;
+  line-height: 1.16;
+  text-align: center;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  caret-color: var(--accent-2);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 85%, white), color-mix(in srgb, var(--accent-2) 85%, white), transparent)
+    center bottom / 100% 2px no-repeat;
+  box-shadow: none;
+  filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--accent) 35%, transparent));
+  animation: tv-edit-in var(--dur-3) var(--ease-out) both;
+}
+.timer-root .tv-edit::placeholder { color: color-mix(in srgb, var(--text) 28%, transparent); }
+.timer-root .tv-edit::selection { background: color-mix(in srgb, var(--accent) 38%, transparent); color: #fff; }
+.timer-root .tv-edit.is-invalid {
+  animation: tv-shake 360ms var(--ease-out);
+  background-image: linear-gradient(90deg, transparent, var(--danger), transparent);
+}
+@keyframes tv-edit-in {
+  from { opacity: 0; transform: scale(.97); }
+  to { opacity: 1; transform: none; }
+}
+/* While editing, the sub-line becomes a hint. */
+.timer-root .tv-timewrap.is-editing + .tv-sub { color: transparent; }
+.timer-root .tv-timewrap.is-editing + .tv-sub::after {
+  content: 'Enter to set  ·  Esc to cancel';
+  position: absolute;
+  inset: 0 -40px;
+  text-align: center;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.timer-root .tv-sub {
+  position: relative;
+  min-height: 1.3em;
+  font: 500 clamp(11px, 3.4cqw, 14px)/1.3 var(--font-ui);
+  letter-spacing: .04em;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  transition: opacity var(--dur-2) var(--ease-out);
+}
+.timer-root .tv-timewrap:has(.tv-time:not(:disabled):hover) + .tv-sub,
+.timer-root .tv-timewrap:has(.tv-time:not(:disabled):focus-visible) + .tv-sub { color: transparent; }
+.timer-root .tv-timewrap:has(.tv-time:not(:disabled):hover) + .tv-sub::after,
+.timer-root .tv-timewrap:has(.tv-time:not(:disabled):focus-visible) + .tv-sub::after {
+  content: attr(data-hint);
+  position: absolute;
+  inset: 0;
+  color: var(--text-faint);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  font-size: .85em;
+}
+
+.timer-root .tv-dots { display: flex; gap: 8px; min-height: 8px; margin-top: 4px; }
+.timer-root .tv-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  transition: background var(--dur-3) var(--ease-out), box-shadow var(--dur-3) var(--ease-out),
+    transform var(--dur-3) var(--ease-spring);
+}
+.timer-root .tv-dot.is-current { background: color-mix(in srgb, var(--accent) 45%, transparent); transform: scale(1.25); }
+.timer-root .tv-dot.is-done {
+  background: var(--accent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+.timer-root .tv-dot.is-pulsing { animation: tv-dot-pulse 1.6s ease-in-out infinite; }
+
+/* ---------- controls ---------- */
+
+.timer-root .tv-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 2.4vw, 16px);
+  max-width: 100%;
+}
+.timer-root .tv-adjust {
+  min-width: 48px;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+.timer-root .tv-adjust small { font-size: .8em; opacity: .7; margin-left: 1px; }
+.timer-root .tv-adjust:disabled,
+.timer-root .tv-lap:disabled { opacity: .4; pointer-events: none; }
+
+.timer-root .tv-play {
+  position: relative;
+  flex: none;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: #07050f;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .45),
+    inset 0 -10px 20px color-mix(in srgb, var(--accent-3) 30%, transparent),
+    0 0 0 1px color-mix(in srgb, #fff 18%, transparent),
+    0 10px 28px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 0 64px color-mix(in srgb, var(--accent-2) 35%, transparent);
+  transition: transform var(--dur-2) var(--ease-spring), box-shadow var(--dur-3) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+.timer-root .tv-play:hover { transform: scale(1.06); }
+.timer-root .tv-play:active { transform: scale(.94); }
+.timer-root .tv-play:focus-visible { outline: 2px solid var(--text); outline-offset: 5px; }
+.timer-root .tv-play__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+.timer-root .tv-play.is-running .tv-play__ring { animation: tv-play-ring 2.6s var(--ease-out) infinite; }
+.timer-root .tv-play__ripples {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  pointer-events: none;
+}
+.timer-root .tv-ripple {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .6);
+  transform: translate(-50%, -50%) scale(0);
+  animation: tv-ripple 700ms var(--ease-out) forwards;
+}
+.timer-root .tv-play__icon {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  transition: transform var(--dur-3) var(--ease-spring), opacity var(--dur-2) var(--ease-out);
+}
+.timer-root .tv-play__icon--play { padding-left: 3px; }
+.timer-root .tv-play__icon--pause { transform: rotate(90deg) scale(.4); opacity: 0; }
+.timer-root .tv-play.is-running .tv-play__icon--play { transform: rotate(-90deg) scale(.4); opacity: 0; }
+.timer-root .tv-play.is-running .tv-play__icon--pause { transform: none; opacity: 1; }
+
+/* ---------- presets ---------- */
+
+.timer-root .tv-presets {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  max-width: 520px;
+}
+.timer-root .tv-preset { font-variant-numeric: tabular-nums; }
+
+/* ---------- laps ---------- */
+
+.timer-root .tv-laps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: min(360px, 100%);
+  display: grid;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.timer-root .tv-lap-row {
+  display: grid;
+  grid-template-columns: 44px 1fr 1fr;
+  align-items: baseline;
+  padding: 9px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font: 500 13px/1.2 var(--font-ui);
+  color: var(--text-dim);
+}
+.timer-root .tv-lap-row.is-new { animation: tv-fade-up var(--dur-3) var(--ease-out) both; }
+.timer-root .tv-lap-row__n { color: var(--accent); font-weight: 600; }
+.timer-root .tv-lap-row__split { color: var(--text); }
+.timer-root .tv-lap-row__total { text-align: right; }
+
+/* ---------- sequence strip ---------- */
+
+.timer-root .tv-strip {
+  display: flex;
+  gap: 4px;
+  width: min(520px, 100%);
+  height: 10px;
+  animation: tv-fade-up var(--dur-3) var(--ease-out) both;
+}
+.timer-root .tv-strip__seg {
+  position: relative;
+  min-width: 6px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: var(--surface-3);
+  transition: transform var(--dur-2) var(--ease-out);
+}
+.timer-root .tv-strip__seg:hover { transform: scaleY(1.5); }
+.timer-root .tv-strip__fill {
+  position: absolute;
+  inset: 0;
+  transform: scaleX(0);
+  transform-origin: left center;
+  border-radius: inherit;
+  transition: opacity var(--dur-3) var(--ease-out);
+}
+.timer-root .tv-strip__seg--focus .tv-strip__fill { background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.timer-root .tv-strip__seg--break .tv-strip__fill { background: color-mix(in srgb, var(--accent-2) 60%, transparent); }
+.timer-root .tv-strip__seg.is-done .tv-strip__fill { transform: scaleX(1); opacity: .45; }
+.timer-root .tv-strip__seg.is-current { box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 45%, transparent); }
+.timer-root .tv-strip__seg.is-running::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, .35) 50%, transparent 70%);
+  background-size: 220% 100%;
+  animation: tv-shimmer 2.4s linear infinite;
+}
+
+/* ---------- hint ---------- */
+
+.timer-root .tv-hint {
+  margin: 0;
+  min-height: 22px;
+  font: 400 13px/22px var(--font-ui);
+  color: var(--text-faint);
+  transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out);
+}
+.timer-root .tv-hint.is-hidden { opacity: 0; transform: translateY(4px); pointer-events: none; }
+
+/* ---------- completion moment ---------- */
+
+.timer-root.tv-complete .tv-ring { animation: tv-pop 1.2s var(--ease-spring); }
+.timer-root.tv-complete .tv-pulse { animation: tv-complete-ripple 1.4s var(--ease-out); }
+.timer-root.tv-complete .tv-time { animation: tv-flash 1.4s var(--ease-out); }
+
+/* ---------- keyframes ---------- */
+
+@keyframes tv-breathe { 0%, 100% { transform: scale(.97); opacity: .8; } 50% { transform: scale(1.04); opacity: 1; } }
+@keyframes tv-spin { to { transform: rotate(360deg); } }
+@keyframes tv-halo { 0%, 100% { transform: scale(.85); opacity: .55; } 50% { transform: scale(1.45); opacity: 1; } }
+@keyframes tv-digit-in { from { transform: translateY(42%); opacity: 0; filter: blur(4px); } to { transform: none; opacity: 1; filter: blur(0); } }
+@keyframes tv-digit-out { from { transform: none; opacity: 1; } to { transform: translateY(-42%); opacity: 0; filter: blur(4px); } }
+@keyframes tv-blink { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+@keyframes tv-shake { 20% { transform: translateX(-6px); } 40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
+@keyframes tv-dot-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 0%, transparent); }
+}
+@keyframes tv-play-ring { 0% { transform: scale(1); opacity: .7; } 100% { transform: scale(1.7); opacity: 0; } }
+@keyframes tv-ripple { to { transform: translate(-50%, -50%) scale(9); opacity: 0; } }
+@keyframes tv-shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+@keyframes tv-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes tv-pop { 0% { transform: scale(1); } 30% { transform: scale(1.03); } 100% { transform: scale(1); } }
+@keyframes tv-complete-ripple { 0% { transform: scale(.96); opacity: .9; } 100% { transform: scale(1.32); opacity: 0; } }
+@keyframes tv-flash {
+  0%, 100% { filter: none; }
+  25% { filter: brightness(1.9) drop-shadow(0 0 18px color-mix(in srgb, var(--accent) 80%, transparent)); }
+}
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 420px) {
+  .timer-root .tv-play { width: 68px; height: 68px; }
+  .timer-root .tv-adjust { min-width: 42px; padding-inline: 10px; }
+  .timer-root .tv-plan__title { max-width: 18ch; }
+}
+
+/* ---------- reduced motion ---------- */
+
+html[data-reduced-motion="true"] .timer-root *,
+html[data-reduced-motion="true"] .timer-root *::before,
+html[data-reduced-motion="true"] .timer-root *::after {
+  animation: none !important;
+}
+html[data-reduced-motion="true"] .timer-root .tv-play,
+html[data-reduced-motion="true"] .timer-root .tv-play__icon { transition-duration: 1ms; }
+html[data-reduced-motion="true"] .timer-root .tv-char.is-out { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-reduced-motion="false"]) .timer-root *,
+  html:not([data-reduced-motion="false"]) .timer-root *::before,
+  html:not([data-reduced-motion="false"]) .timer-root *::after {
+    animation: none !important;
+  }
+  html:not([data-reduced-motion="false"]) .timer-root .tv-char.is-out { display: none; }
+}

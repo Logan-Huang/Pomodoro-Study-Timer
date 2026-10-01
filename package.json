@@ -1,0 +1,14 @@
+{
+  "name": "aura-study-timer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Aura, a calm study timer with Pomodoro, countdown and Google Calendar scheduling. Zero dependencies, zero build.",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
