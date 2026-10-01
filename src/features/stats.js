@@ -11,17 +11,30 @@ const KIND_BY_PHASE = { focus: 'focus', countdown: 'timer', stopwatch: 'stopwatc
 
 let sessions = [];
 let dayCache = null;
+let segCache = null; // segment startedAt -> ms already logged for that segment
+let clearedAt = 0; // sessions that ended at or before this were cleared ("Reset statistics", synced)
 let inited = false;
 
 // Live (not yet logged) time from the segment currently running or paused.
 let timerState = null;
-let loggedStart; // startedAt of the segment most recently logged, so it is never counted twice
+let loggedStart; // startedAt of the segment most recently completed, so it is never counted twice
 let lastLiveMs = 0;
-// Part of the running segment already logged early, when the active task changed mid-session
-// (e.g. it was marked done). Keyed by the segment's startedAt.
-let segLogged = { start: undefined, ms: 0 };
 
-const alreadyLogged = (startedAt) => (segLogged.start !== undefined && segLogged.start === startedAt ? segLogged.ms : 0);
+/**
+ * Time already logged for a segment. A mid-session task hand-off logs part of a segment early, and
+ * on a synced account another device may already have logged it. Derived from the log itself, so
+ * it holds across reloads and devices.
+ */
+function alreadyLogged(startedAt) {
+  if (!Number.isFinite(startedAt)) return 0;
+  if (!segCache) {
+    segCache = new Map();
+    for (const s of sessions) {
+      if (Number.isFinite(s.segStart)) segCache.set(s.segStart, (segCache.get(s.segStart) || 0) + s.durationMs);
+    }
+  }
+  return segCache.get(startedAt) || 0;
+}
 
 /** Local-time day key, YYYY-MM-DD. */
 export function dateKey(d = new Date()) {
@@ -58,6 +71,7 @@ function emitUpdated() {
 
 function commit() {
   dayCache = null;
+  segCache = null;
   save(KEY, sessions);
   emitUpdated();
 }
@@ -71,6 +85,7 @@ export function initStats() {
   inited = true;
   const data = load(KEY, []);
   sessions = Array.isArray(data) ? data.filter(isSession).slice(-CAP) : [];
+  clearedAt = Number(load('statsClearedAt', 0)) || 0;
   dayCache = null;
 
   bus.on('timer:complete', onComplete);
@@ -96,6 +111,32 @@ export function getLiveMs() {
   return Math.floor(Math.max(0, unlogged) / 60000) * 60000;
 }
 
+// Session ids are derived from the segment, so two synced devices that both see the same session
+// finish produce the same id, and the log (and the task's credited time) only counts it once.
+function sessionId(kind, segStart, offsetMs) {
+  if (!Number.isFinite(segStart)) return `s_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  return `s_${kind}_${segStart}_${Math.round(offsetMs / 1000)}`;
+}
+
+/** Logs a session (and credits a task) unless it's already in the log. */
+function logSession(entry, offsetMs, creditTaskId) {
+  const id = sessionId(entry.kind, entry.segStart, offsetMs);
+  if (sessions.some((s) => s.id === id)) return null;
+  if (creditTaskId) {
+    try {
+      addTaskFocus(creditTaskId, entry.durationMs, id);
+    } catch (e) {
+      console.warn('[aura] could not credit task time', e);
+    }
+  }
+  const session = { id, ...entry };
+  sessions.push(session);
+  if (sessions.length > CAP) sessions = sessions.slice(-CAP);
+  commit();
+  bus.emit('stats:session-added', { session });
+  return session;
+}
+
 /**
  * The active task is about to change (switched, marked done or deleted) while a session may be
  * running: log the time spent so far and credit it to that task. The rest of the session is logged
@@ -111,30 +152,23 @@ function checkpoint(taskId) {
   if (!(portion >= MIN_LOG_MS)) return;
   const task = getTasks().find((t) => t.id === taskId);
   const now = Date.now();
-  try {
-    addTaskFocus(taskId, portion);
-  } catch (e) {
-    console.warn('[aura] could not credit task time', e);
-  }
-  pushSession({
-    kind: KIND_BY_PHASE[s.phase],
-    label: s.label || '',
-    startedAt: (s.startedAt || now - s.elapsedMs) + done,
-    endedAt: now,
-    durationMs: portion,
+  logSession(
+    {
+      kind: KIND_BY_PHASE[s.phase],
+      label: s.label || '',
+      segStart: s.startedAt,
+      startedAt: (s.startedAt || now - s.elapsedMs) + done,
+      endedAt: now,
+      durationMs: portion,
+      taskId,
+      taskTitle: task ? task.title : null,
+      eventId: s.meta?.eventId || null,
+      natural: false,
+    },
+    done,
     taskId,
-    taskTitle: task ? task.title : null,
-    eventId: s.meta?.eventId || null,
-    natural: false,
-  });
-  segLogged = { start: s.startedAt, ms: done + portion };
+  );
   lastLiveMs = getLiveMs();
-  commit();
-}
-
-function pushSession(entry) {
-  sessions.push({ id: `s_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, ...entry });
-  if (sessions.length > CAP) sessions = sessions.slice(-CAP);
 }
 
 function onTimer(state) {
@@ -151,35 +185,32 @@ function onComplete(rec) {
   // The engine still reports this segment until its next timer:state; stop counting it live now.
   loggedStart = rec.startedAt;
   lastLiveMs = 0;
-  // Only the part not already logged at a task hand-off; a remainder after a hand-off counts from 1 s.
+  // Only the part not already logged (at a task hand-off, or by another synced device); a
+  // remainder after a hand-off counts from 1 s.
   const done = alreadyLogged(rec.startedAt);
-  segLogged = { start: undefined, ms: 0 };
   const portion = rec.elapsedMs - done;
   if (!(portion >= (done > 0 ? 1000 : MIN_LOG_MS))) {
     emitUpdated();
     return;
   }
   const active = safeActive();
-  if (active) {
-    try {
-      addTaskFocus(active.id, portion);
-    } catch (e) {
-      console.warn('[aura] could not credit task time', e);
-    }
-  }
-
-  pushSession({
-    kind: KIND_BY_PHASE[rec.phase],
-    label: rec.label || '',
-    startedAt: (rec.startedAt || rec.endedAt - rec.elapsedMs) + done,
-    endedAt: rec.endedAt || Date.now(),
-    durationMs: portion,
-    taskId: active ? active.id : null,
-    taskTitle: active ? active.title : null,
-    eventId: rec.meta?.eventId || null,
-    natural: !!rec.natural,
-  });
-  commit();
+  const logged = logSession(
+    {
+      kind: KIND_BY_PHASE[rec.phase],
+      label: rec.label || '',
+      segStart: rec.startedAt,
+      startedAt: (rec.startedAt || rec.endedAt - rec.elapsedMs) + done,
+      endedAt: rec.endedAt || Date.now(),
+      durationMs: portion,
+      taskId: active ? active.id : null,
+      taskTitle: active ? active.title : null,
+      eventId: rec.meta?.eventId || null,
+      natural: !!rec.natural,
+    },
+    done,
+    active ? active.id : null,
+  );
+  if (!logged) emitUpdated();
 }
 
 function safeActive() {
@@ -244,11 +275,67 @@ export function getRange(days) {
   return out;
 }
 
+/** "Reset statistics": clears the log here and (via cloud sync) on every signed-in device. */
 export function clearStats() {
+  clearedAt = Date.now();
+  save('statsClearedAt', clearedAt);
   sessions = [];
   commit();
+  bus.emit('stats:cleared', { at: clearedAt });
 }
 
 export function exportData() {
   return { sessions: getSessions(), tasks: getTasks() };
+}
+
+/* ---------- cloud sync hooks ---------- */
+
+export const getClearedAt = () => clearedAt;
+
+/** Adds sessions from the cloud (deduplicated by id). Returns how many were new. */
+export function mergeRemote(items) {
+  if (!Array.isArray(items) || !items.length) return 0;
+  const have = new Set(sessions.map((s) => s.id));
+  let added = 0;
+  for (const s of items) {
+    if (!isSession(s) || typeof s.id !== 'string' || have.has(s.id) || s.endedAt <= clearedAt) continue;
+    sessions.push({ ...s });
+    have.add(s.id);
+    added++;
+  }
+  if (!added) return 0;
+  sessions.sort((a, b) => a.endedAt - b.endedAt);
+  if (sessions.length > CAP) sessions = sessions.slice(-CAP);
+  commit();
+  lastLiveMs = getLiveMs();
+  return added;
+}
+
+/** Another device reset statistics at `at`: drop everything that ended before then. */
+export function applyCleared(at) {
+  if (!(Number(at) > clearedAt)) return;
+  clearedAt = Number(at);
+  save('statsClearedAt', clearedAt);
+  sessions = sessions.filter((s) => s.endedAt > clearedAt);
+  commit();
+}
+
+/**
+ * On sign-in the account's reset time replaces this device's. A reset made here before signing in
+ * already deleted this device's sessions, so lowering the time only lets the account's history in.
+ */
+export function adoptClearedAt(at) {
+  const next = Number(at) || 0;
+  if (next > clearedAt) return applyCleared(next);
+  if (next === clearedAt) return;
+  clearedAt = next;
+  save('statsClearedAt', clearedAt);
+}
+
+/** Removes the session log from this device (used when signing out; the account keeps its copy). */
+export function clearLocal() {
+  sessions = [];
+  clearedAt = 0;
+  save('statsClearedAt', 0);
+  commit();
 }

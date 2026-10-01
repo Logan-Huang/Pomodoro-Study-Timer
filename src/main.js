@@ -176,6 +176,12 @@ async function boot() {
 
   await bootModule('timer state', () => import('./timer/engine.js'), (m) => m.timer.emitState());
 
+  // Optional account sync. Not awaited: it only loads Firebase for signed-in devices and must never
+  // delay the app.
+  bootModule('account', () => import('./cloud/account.js'), (m) => {
+    m.initAccount();
+  });
+
   bus.emit('app:ready', {});
   requestAnimationFrame(() => requestAnimationFrame(() => app.classList.remove('is-booting')));
 }

@@ -1,0 +1,50 @@
+rules_version = '2';
+
+// Aura — Cloud Firestore security rules.
+// Each signed-in user can read and write only their own data under users/{uid}. Everything else
+// (other users' data, any other path, unauthenticated access) is denied.
+//
+// Publish: Firebase console → Firestore Database → Rules → paste this file → Publish.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // Profile: synced settings, active task, stats-reset time.
+    match /users/{uid} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+        && request.resource.data.keys().hasOnly([
+          'settings', 'settingsUpdatedAt', 'activeTaskId', 'activeUpdatedAt', 'statsClearedAt', 'createdAt'
+        ]);
+
+      // One document per task (or a deletion marker), keyed by the task id.
+      match /tasks/{taskId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && taskId.size() <= 64
+          && request.resource.data.id == taskId;
+      }
+
+      // Focus-session log, one document per month ("YYYY-MM").
+      match /sessions/{month} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && month.matches('^[0-9]{4}-[0-9]{2}$')
+          && request.resource.data.keys().hasOnly(['items', 'updatedAt'])
+          && request.resource.data.items is list;
+      }
+
+      // The running timer.
+      match /state/{docId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && docId == 'timer'
+          && request.resource.data.keys().hasOnly(['snap', 'savedAt', 'deviceId']);
+      }
+    }
+  }
+}

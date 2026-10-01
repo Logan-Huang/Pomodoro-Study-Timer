@@ -465,10 +465,15 @@ export function initScheduleView(root, service) {
           </ol>
         </details>
       </div>`;
-    if (setHtml(refs.setup, html) && !ui.preloaded && location.protocol !== 'file:') {
-      ui.preloaded = true;
-      service.preload?.();
-    }
+    // Google's sign-in script loads only for people who have set up Calendar (or start to, see
+    // warmGoogle), so a plain visit makes no request to Google.
+    if (setHtml(refs.setup, html) && getSettings().calendar?.clientId) warmGoogle();
+  }
+
+  function warmGoogle() {
+    if (ui.preloaded || location.protocol === 'file:') return;
+    ui.preloaded = true;
+    service.preload?.();
   }
 
   // ---- options menu ----
@@ -621,6 +626,9 @@ export function initScheduleView(root, service) {
       updateSettings({ calendar: { warnBeforeEventMin: +input.value } });
     }
   });
+
+  // Showing interest in connecting loads Google's script early, so the sign-in popup opens straight from the click.
+  for (const type of ['pointerenter', 'focusin', 'touchstart']) refs.setup.addEventListener(type, warmGoogle, { passive: true });
 
   refs.setup.addEventListener('input', (e) => {
     if (e.target.classList.contains('sch-setup__input')) ui.clientId = e.target.value;

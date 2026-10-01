@@ -81,6 +81,8 @@ function card(title, iconName, body, extraClass = '') {
 
 function render() {
   return `
+    <section class="set-card glass set-account" data-account></section>
+
     ${card('Focus rhythm', 'brain', [
       row('Focus', 'Length of a focus session', stepper('pomodoro.focusMin', { min: 1, max: 180, label: 'Focus minutes' })),
       row('Short break', 'Between focus sessions', stepper('pomodoro.shortBreakMin', { min: 1, max: 60, label: 'Short break minutes' })),
@@ -146,7 +148,8 @@ function render() {
 
     <footer class="set-footer">
       <button class="btn btn--ghost btn--sm" type="button" data-shortcuts>${icon('keyboard', { size: 15 })}<span>Keyboard shortcuts</span></button>
-      <span class="set-footer__version serif">Aura v1.0</span>
+      <span class="set-footer__legal"><a href="privacy.html" target="_blank" rel="noopener">Privacy</a> · <a href="terms.html" target="_blank" rel="noopener">Terms</a></span>
+      <span class="set-footer__version serif">Aura v1.1</span>
     </footer>`;
 }
 
@@ -394,7 +397,7 @@ function twoStep(btn, action) {
   btn.addEventListener('blur', reset);
 }
 
-async function exportAll() {
+export async function exportAll() {
   let extra = {};
   try {
     const mod = await import('../features/stats.js');
@@ -457,6 +460,9 @@ export function initSettingsPanel(root) {
   wireSegmented(root);
   wireActions(root);
   wireThemes(root);
+  import('./account-card.js')
+    .then((m) => m.mountAccountCard(root.querySelector('[data-account]')))
+    .catch((err) => console.error('[aura] account card failed', err));
 
   const syncAll = (s = getSettings()) => syncers.forEach((fn) => {
     try { fn(s); } catch (err) { console.error('[aura] settings sync failed', err); }

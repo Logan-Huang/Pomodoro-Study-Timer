@@ -74,6 +74,18 @@ export function updateSettings(patch) {
   return settings;
 }
 
+/**
+ * Adopts settings synced from the cloud (validated against the defaults like stored settings).
+ * The event carries `remote: true` so the sync layer doesn't echo it back.
+ */
+export function applyRemoteSettings(remote) {
+  if (!isObj(remote)) return settings;
+  settings = sanitize(DEFAULT_SETTINGS, remote);
+  save('settings', settings);
+  bus.emit('settings:changed', { settings, patch: clone(settings), remote: true });
+  return settings;
+}
+
 export function resetSettings() {
   const fresh = clone(DEFAULT_SETTINGS);
   // Preserve the calendar client id: it is a connection credential, not a preference.

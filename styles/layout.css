@@ -477,3 +477,21 @@ html[data-reduced-motion="true"] .clock__colon { animation: none; }
 @media (max-width: 359.98px) {
   .topbar__actions .btn-icon { width: 34px; height: 34px; }
 }
+
+/* ---- Legal links (Privacy · Terms), quiet bottom-right corner ---- */
+.site-legal {
+  position: fixed;
+  right: calc(14px + env(safe-area-inset-right));
+  bottom: calc(10px + env(safe-area-inset-bottom));
+  z-index: 5;
+  display: flex;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: .02em;
+  color: var(--text-faint);
+  transition: opacity var(--dur-3) var(--ease-out), visibility var(--dur-3);
+}
+.site-legal a { color: inherit; padding: 2px 0; }
+.site-legal a:hover, .site-legal a:focus-visible { color: var(--text); }
+#app[data-zen="true"] .site-legal,
+.app.is-booting .site-legal { opacity: 0; visibility: hidden; pointer-events: none; }

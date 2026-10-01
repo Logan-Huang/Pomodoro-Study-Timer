@@ -33,6 +33,7 @@ const S = {
   meta: null,
   laps: [],
   lastCountdownMs: 0,
+  changedAt: 0,
 };
 
 let inited = false;
@@ -127,6 +128,7 @@ function snapshot() {
     meta: S.meta,
     laps: S.laps,
     lastCountdownMs: S.lastCountdownMs,
+    changedAt: S.changedAt,
     savedAt: Date.now(),
   };
 }
@@ -136,25 +138,16 @@ function persist() {
   save('timer', snapshot());
 }
 
-function restore() {
-  const snap = load('timer', null);
-  S.lastCountdownMs = defaultCountdownMs();
-  if (!snap || typeof snap !== 'object') {
-    S.totalMs = pomMs('focus');
-    return;
-  }
+// Validates a saved snapshot (local storage or another device) and loads it into S.
+// Returns false, leaving S untouched, when the snapshot is unusable.
+function assignSnapshot(snap) {
+  if (!snap || typeof snap !== 'object') return false;
   const num = (v, d = 0) => (Number.isFinite(v) ? v : d);
   const okMode = ENGINE_MODES.includes(snap.engineMode);
   const okPhase = PHASES.includes(snap.phase);
-  if (!okMode || !okPhase || !STATUSES.includes(snap.status) || !(snap.totalMs >= 0)) {
-    S.totalMs = pomMs('focus');
-    return;
-  }
+  if (!okMode || !okPhase || !STATUSES.includes(snap.status) || !(snap.totalMs >= 0)) return false;
   const segs = Array.isArray(snap.segments) ? normalizeSegments(snap.segments) : null;
-  if (snap.engineMode === 'sequence' && (!segs || !segs.length)) {
-    S.totalMs = pomMs('focus');
-    return;
-  }
+  if (snap.engineMode === 'sequence' && (!segs || !segs.length)) return false;
   Object.assign(S, {
     engineMode: snap.engineMode,
     phase: snap.phase,
@@ -173,6 +166,16 @@ function restore() {
   if (S.engineMode === 'sequence') S.segmentIndex = Math.min(Math.max(0, Math.floor(num(snap.segmentIndex))), S.segments.length - 1);
   if (Number.isFinite(snap.lastCountdownMs) && snap.lastCountdownMs >= MIN_MS) S.lastCountdownMs = clampMs(snap.lastCountdownMs);
   if (S.status === 'running' && !S.anchor) S.status = 'paused';
+  S.changedAt = Number.isFinite(snap.changedAt) ? snap.changedAt : num(snap.savedAt);
+  return true;
+}
+
+function restore() {
+  S.lastCountdownMs = defaultCountdownMs();
+  if (!assignSnapshot(load('timer', null))) {
+    S.totalMs = pomMs('focus');
+    return;
+  }
 
   // A running segment whose end passed while the app was closed completes now and the next one waits idle.
   if (S.status === 'running' && S.engineMode !== 'stopwatch') {
@@ -313,7 +316,10 @@ function emitPhaseStart() {
   });
 }
 
-function commit() {
+// `userChange` marks a real change of timer state (start, pause, skip, a segment ending...). Its time
+// (changedAt) decides which device wins when synced devices disagree; periodic saves don't bump it.
+function commit(userChange = true) {
+  if (userChange) S.changedAt = Date.now();
   syncTicker();
   persist();
   bus.emit('timer:state', buildState());
@@ -522,6 +528,21 @@ export const timer = {
   emitState() {
     bus.emit('timer:state', buildState());
   },
+
+  /** The persisted snapshot (absolute timestamps), used to sync the timer across devices. */
+  exportSnapshot() {
+    return snapshot();
+  },
+
+  /**
+   * Adopts a snapshot from another device. Timestamps are absolute, so a running timer continues
+   * at the right point; if its end has already passed, the next tick completes it as usual.
+   */
+  applyRemote(snap) {
+    if (!assignSnapshot(snap)) return false;
+    commit(false);
+    return true;
+  },
 };
 
 /** Restore persisted state, wire listeners. Idempotent. */
@@ -531,13 +552,13 @@ export function initEngine() {
   restore();
   bus.on('settings:changed', ({ patch } = {}) => {
     const changed = refreshIdleDuration();
-    if (changed || (patch && patch.pomodoro)) commit();
+    if (changed || (patch && patch.pomodoro)) commit(false);
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && S.status === 'running') onTick();
   });
   window.addEventListener('pagehide', persist);
-  commit();
+  commit(false);
 }
 
 try { S.totalMs = pomMs('focus'); } catch { /* settings not ready yet */ }

@@ -31,10 +31,23 @@ function changeActive(next) {
   activeId = next;
 }
 
+// Local edits: keep each task's `order` in step with its position, stamping `updatedAt` on anything
+// that moved, so cloud sync can merge lists from several devices (newest edit wins per task).
 function commit() {
+  const now = Date.now();
+  tasks.forEach((t, i) => {
+    if (t.order !== i) {
+      t.order = i;
+      t.updatedAt = now;
+    }
+  });
   save(KEY, { tasks, activeId });
   bus.emit('tasks:changed', snapshot());
 }
+
+const touch = (t) => {
+  t.updatedAt = Date.now();
+};
 
 function focusMinSetting() {
   try {
@@ -134,6 +147,7 @@ export function addTask(title, estMin = EST_STEP_MIN) {
     estMin: clampEstMin(estMin),
     focusMs: 0,
     createdAt: Date.now(),
+    updatedAt: Date.now(),
     doneAt: null,
   };
   tasks.push(task);
@@ -157,18 +171,55 @@ export function updateTask(id, patch = {}) {
     t.done = !!patch.done;
     t.doneAt = t.done ? Date.now() : null;
   }
+  touch(t);
   commit();
   return { ...t };
 }
 
-/** Credits focused time to a task (reads the live record, so callers can't pass a stale total). */
-export function addTaskFocus(id, ms) {
+/**
+ * Credits focused time to a task (reads the live record, so callers can't pass a stale total).
+ * `creditKey` (the session id) makes crediting idempotent: when two synced devices both see a
+ * session finish, the task is only credited once.
+ */
+export function addTaskFocus(id, ms, creditKey) {
   const t = find(id);
   const add = Math.round(Number(ms) || 0);
   if (!t || add <= 0) return null;
+  if (creditKey) {
+    const credited = Array.isArray(t.credited) ? t.credited : [];
+    if (credited.includes(creditKey)) return { ...t };
+    t.credited = [...credited, creditKey].slice(-60);
+  }
   t.focusMs = (t.focusMs || 0) + add;
+  touch(t);
   commit();
   return { ...t };
+}
+
+/**
+ * Replaces the list with synced data from the cloud. No hand-off events and no re-stamping, so
+ * applying remote data never echoes back as a local edit.
+ */
+export function applyRemote({ tasks: list, activeId: nextActive } = {}) {
+  if (Array.isArray(list)) {
+    const ctx = { migrated: false, logged: () => new Map(), focusMin: focusMinSetting };
+    tasks = list
+      .map((t) => normalize(t, ctx))
+      .filter(Boolean)
+      .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0) || (a.createdAt || 0) - (b.createdAt || 0));
+  }
+  const want = nextActive !== undefined ? nextActive : activeId;
+  activeId = want && tasks.some((t) => t.id === want && !t.done) ? want : null;
+  save(KEY, { tasks, activeId });
+  bus.emit('tasks:changed', snapshot());
+}
+
+/** Removes every task from this device (used when signing out; the account keeps its copy). */
+export function clearLocal() {
+  tasks = [];
+  activeId = null;
+  save(KEY, { tasks, activeId });
+  bus.emit('tasks:changed', snapshot());
 }
 
 export function toggleDone(id) {
